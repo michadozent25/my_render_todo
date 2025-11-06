@@ -14,7 +14,7 @@ def login():
         submit = st.form_submit_button("Login")
         if submit:
             #  POST http://127.0.0.1:8000/users/authenticate
-            response = requests.post(BASE_URL+"/users/authenticate", json={
+            response = requests.post(API_BASE+"/users/authenticate", json={
                 "name":username,
                 "password":password
             })
@@ -49,7 +49,7 @@ def welcome():
     # http://127.0.0.1:8000/todos/?user_id=1
 
     if st.button("Todo erstellen"):
-        response = requests.post(f"{BASE_URL}/todos/",json=json_param,params={"user_id":user_id})
+        response = requests.post(f"{API_BASE}/todos/",json=json_param,params={"user_id":user_id})
         if response.status_code==200:
             st.success("Todo gespeichert!")
             st.json(response.json())
@@ -59,7 +59,7 @@ def welcome():
     ## alle Todos
     st.write("Todos")
     #http://127.0.0.1:8000/users/2/todos
-    response = requests.get(f"{BASE_URL}/users/{user_id}/todos")
+    response = requests.get(f"{API_BASE}/users/{user_id}/todos")
     #response.raise_for_status()
     if response.status_code==200:
         todos = response.json()
