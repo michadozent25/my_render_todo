@@ -5,7 +5,11 @@ import os
 
 #DATABASE_URL ="mysql+pymysql://root:@localhost:3306/todo_db"
 DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL,echo=True)# mysql+pymysql://USERNAME:PASSWORD@HOST:PORT/DATENBANK
+engine = create_engine(
+    os.getenv("DATABASE_URL"),
+    connect_args={"ssl": {"ca": "/opt/render/project/.ca/aiven-ca.pem"}},
+    pool_pre_ping=True,
+)
 
 
 

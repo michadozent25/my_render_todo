@@ -46,3 +46,9 @@ versions/              # wird erzeugt, aber gehört meist ins Repo, falls genutz
 
 # Node (nur falls doch irgendwo React / npm)
 node_modules/
+
+
+.env
+.env.*
+*.pem
+todo_backend/certs/
