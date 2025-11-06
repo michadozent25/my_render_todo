@@ -22,8 +22,8 @@ def warmup_once() -> None:
     with st.spinner("Backend wird aufgeweckt…"):
         for i in range(3):
             try:
-                SESSION.get(api_url("/health"), timeout=25)
-                SESSION.get(api_url("/health/db"), timeout=25)
+                SESSION.get(api_url("/status"), timeout=25)
+                SESSION.get(api_url("/status/db"), timeout=25)
                 break
             except Exception:
                 time.sleep(2 * (i + 1))

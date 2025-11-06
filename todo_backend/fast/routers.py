@@ -11,6 +11,21 @@ from model.models import User, Todo
 user_router = APIRouter(prefix="/users", tags=["users"])
 todo_router = APIRouter(prefix="/todos", tags=["todos"])
 
+
+status_router = APIRouter()
+
+@status_router.get("/status")
+def status():
+    return {"status": "running"}
+
+@status_router.get("/status/db")
+def status_db(db: Session = Depends(get_db)):
+    try:
+        db.execute("SELECT 1")
+        return {"database": "connected"}
+    except Exception as e:
+        return {"database": "error", "detail": str(e)}
+
 # ================= USERS ==================================================
 
 @user_router.get("/", response_model=list[UserRead])
