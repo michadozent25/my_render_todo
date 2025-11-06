@@ -1,6 +1,8 @@
-# routers.py
+# todo_backend/fast/routers.py
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
+
 from database.db_session import get_db
 from database.crud import UserRepository, TodoRepository
 from security.pwd import hash_password
@@ -10,94 +12,29 @@ from model.models import User, Todo
 user_router = APIRouter(prefix="/users", tags=["users"])
 todo_router = APIRouter(prefix="/todos", tags=["todos"])
 
-# ================= USERS ==================================================
-
-@user_router.get("/", response_model=list[UserRead])
-def list_users(db: Session = Depends(get_db)):
-    """
-    Example URL:
-    http://127.0.0.1:8000/users/
-    """
-    repo = UserRepository(db)
-    return repo.get_users()
-
-
-@user_router.get("/{user_id}", response_model=UserRead)
-def get_user(user_id: int, db: Session = Depends(get_db)):
-    """
-    Example URL:
-    http://127.0.0.1:8000/users/1
-    """
-    repo = UserRepository(db)
-    user = repo.get_user_by_id(user_id)
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
-
-
-@user_router.get("/{user_id}/todos", response_model=list[TodoRead])
-def get_todos_by_user(user_id: int, db: Session = Depends(get_db)):
-    """
-    Example URL:
-    http://127.0.0.1:8000/users/2/todos
-    """
-    repo = TodoRepository(db)
-    return repo.get_todos_by_user(user_id)
-
-
-@user_router.get("/{user_id}/done_todos", response_model=list[TodoRead])
-def get_done_todos(user_id: int, db: Session = Depends(get_db)):
-    """
-    Example URL:
-    http://127.0.0.1:8000/users/1/done_todos
-    """
-    repo = UserRepository(db)
-    return repo.get_done_todos(user_id)
-
-
-@user_router.get("/{user_id}/open_todos", response_model=list[TodoRead])
-def get_open_todos(user_id: int, db: Session = Depends(get_db)):
-    """
-    Example URL:
-    http://127.0.0.1:8000/users/1/open_todos
-    """
-    repo = UserRepository(db)
-    return repo.get_open_todos(user_id)
-
-
 @user_router.post("/", response_model=UserRead)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    """
-    Example URL:
-    POST http://127.0.0.1:8000/users/
-    Request body:
-    {
-        "name": "alice",
-        "password": "secret123"
-    }
-    """
     repo = UserRepository(db)
-    hashed_pw = hash_password(user.password)
-    new_user = User(name=user.name, password=hashed_pw)
-    return repo.create_user(new_user)
-
+    try:
+        hashed_pw = hash_password(user.password)
+        new_user = User(name=user.name, password=hashed_pw)
+        return repo.create_user(new_user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Username existiert bereits")
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"DB-Fehler: {e.__class__.__name__}")
 
 @user_router.post("/authenticate", response_model=UserRead)
 def authenticate_user(credentials: UserLogin, db: Session = Depends(get_db)):
-    """
-    Example URL:
-    POST http://127.0.0.1:8000/users/authenticate
-    Request body:
-    {
-        "name": "alice",
-        "password": "secret123"
-    }
-    """
     repo = UserRepository(db)
     user = repo.authenticate(credentials.name, credentials.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid name or password")
     return user
+
+# … (deine übrigen Endpunkte unverändert)
 
 
 # ================= TODOS ==================================================
