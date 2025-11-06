@@ -1,50 +1,94 @@
 import os
+import time
 import requests
 import streamlit as st
 
 API_BASE = os.getenv("API_BASE", "http://localhost:8000").rstrip("/")
 
-# ---------- kleine Helfer ----------
-def api_post(path: str, **kwargs):
-    url = f"{API_BASE}/{path.lstrip('/')}"
-    return requests.post(url, timeout=15, **kwargs)
+# Eine Requests-Session hält Keep-Alive-Verbindungen offen → schneller nach Warmup
+SESSION = requests.Session()
 
-def api_get(path: str, **kwargs):
-    url = f"{API_BASE}/{path.lstrip('/')}"
-    return requests.get(url, timeout=15, **kwargs)
+# ---------- Helpers ----------
+def api_url(path: str) -> str:
+    return f"{API_BASE}/{path.lstrip('/')}"
 
+def warmup(timeout: int = 20):
+    """Weckt das Backend (Render Free-Tier) per /health auf."""
+    try:
+        SESSION.get(api_url("/health"), timeout=timeout)
+    except Exception:
+        # selbst wenn health fehlschlägt, versuchen wir gleich den eigentlichen Call
+        pass
+
+def request_with_retry(method: str, path: str, *, tries: int = 3, timeout: int = 30, **kwargs) -> requests.Response:
+    """
+    Führt einen Request mit Warmup und Retries aus.
+    Wiederholt bei 502/503/504 oder Verbindungsfehlern (Free-Tier kalt).
+    """
+    # 1) Warmup mit UI-Feedback (nur beim ersten Versuch)
+    with st.spinner("Backend wird aufgeweckt…"):
+        warmup()
+
+    url = api_url(path)
+    last_exc = None
+    for i in range(1, tries + 1):
+        try:
+            r = SESSION.request(method, url, timeout=timeout, **kwargs)
+            if r.status_code in (502, 503, 504):
+                raise RuntimeError(f"Upstream {r.status_code}")
+            return r
+        except Exception as e:
+            last_exc = e
+            if i == tries:
+                break
+            time.sleep(2 * i)  # 2s, 4s Backoff
+    # Letzten Fehler hochreichen – Streamlit zeigt ihn an
+    raise last_exc
+
+def api_post(path: str, **kwargs) -> requests.Response:
+    return request_with_retry("POST", path, **kwargs)
+
+def api_get(path: str, **kwargs) -> requests.Response:
+    return request_with_retry("GET", path, **kwargs)
+
+# ---------- Auth-Logik ----------
 def do_login(username: str, password: str):
-    resp = api_post("/users/authenticate", json={"name": username, "password": password})
-    if resp.status_code == 200:
-        st.session_state["user"] = resp.json()
-        st.session_state["logged_in"] = True
-        return True, None
-    elif resp.status_code in (401, 404):
-        return False, "Name oder Passwort falsch."
-    else:
-        return False, f"Login-Fehler ({resp.status_code}): {resp.text}"
+    try:
+        resp = api_post("/users/authenticate", json={"name": username, "password": password})
+        if resp.status_code == 200:
+            st.session_state["user"] = resp.json()
+            st.session_state["logged_in"] = True
+            return True, None
+        elif resp.status_code in (401, 404):
+            return False, "Name oder Passwort falsch."
+        else:
+            return False, f"Login-Fehler ({resp.status_code}): {resp.text}"
+    except Exception as e:
+        return False, f"Login fehlgeschlagen: {e}"
 
 def do_register(username: str, password: str):
-    # Backend erwartet: POST /users  mit {"name": "...", "password": "..."}
-    resp = api_post("/users/", json={"name": username, "password": password})
-    if resp.status_code == 200:
-        # direkt einloggen
-        return do_login(username, password)
-    elif resp.status_code == 409:
-        return False, "Benutzername bereits vergeben."
-    else:
-        return False, f"Registrierung fehlgeschlagen ({resp.status_code}): {resp.text}"
+    try:
+        resp = api_post("/users/", json={"name": username, "password": password})
+        if resp.status_code == 200:
+            # direkt einloggen
+            return do_login(username, password)
+        elif resp.status_code == 409:
+            return False, "Benutzername bereits vergeben."
+        else:
+            return False, f"Registrierung fehlgeschlagen ({resp.status_code}): {resp.text}"
+    except Exception as e:
+        return False, f"Registrierung fehlgeschlagen: {e}"
 
 # ---------- UI ----------
 st.set_page_config(page_title="Todos", layout="centered")
 
 def login_view():
     st.title("Anmelden")
-    with st.form("login_form", clear_on_submit=False):
-        col1, col2 = st.columns(2)
-        with col1:
+    with st.form("login_form"):
+        c1, c2 = st.columns(2)
+        with c1:
             username = st.text_input("Username", autocomplete="username")
-        with col2:
+        with c2:
             password = st.text_input("Passwort", type="password", autocomplete="current-password")
         submitted = st.form_submit_button("Login")
         if submitted:
@@ -60,7 +104,7 @@ def login_view():
 
 def register_view():
     st.title("Registrieren")
-    with st.form("register_form", clear_on_submit=False):
+    with st.form("register_form"):
         username = st.text_input("Username", help="Muss eindeutig sein.")
         pw1 = st.text_input("Passwort", type="password")
         pw2 = st.text_input("Passwort bestätigen", type="password")
@@ -103,10 +147,7 @@ def authed_view():
     st.subheader("Neues Todo")
     task = st.text_input("Task")
     description = st.text_input("Beschreibung")
-
-    # HINWEIS: Dein Backend hatte nur OPEN/DONE erlaubt.
-    # Wenn du "IN_PROGRESS" verwenden willst, erlaube das im Backend (ALLOWED_STATES).
-    state = st.selectbox("Status", ["OPEN", "DONE"])  # füge "IN_PROGRESS" nur, wenn Backend es akzeptiert
+    state = st.selectbox("Status", ["OPEN", "DONE"])  # Backend-States daran ausrichten
     deadline = st.date_input("Deadline")
 
     if st.button("Todo erstellen", use_container_width=True):
@@ -116,24 +157,26 @@ def authed_view():
             "deadline": deadline.isoformat(),
             "state": state,
         }
-        r = api_post("/todos/", json=payload, params={"user_id": user_id})
-        if r.status_code == 200:
-            st.success("Todo gespeichert.")
-            st.json(r.json())
-        else:
-            st.error(f"Fehler beim Speichern ({r.status_code}): {r.text}")
+        try:
+            r = api_post("/todos/", json=payload, params={"user_id": user_id})
+            if r.status_code == 200:
+                st.success("Todo gespeichert.")
+                st.json(r.json())
+            else:
+                st.error(f"Fehler beim Speichern ({r.status_code}): {r.text}")
+        except Exception as e:
+            st.error(f"Fehler beim Speichern: {e}")
 
     st.subheader("Todos")
-    r = api_get(f"/users/{user_id}/todos")
-    if r.status_code == 200:
-        todos = r.json()
-        if todos:
-            # Streamlit kann dict/list direkt als Tabelle darstellen
-            st.table(todos)
+    try:
+        r = api_get(f"/users/{user_id}/todos")
+        if r.status_code == 200:
+            todos = r.json()
+            st.table(todos) if todos else st.info("Keine Todos.")
         else:
-            st.info("Keine Todos.")
-    else:
-        st.error(f"Fehler beim Laden ({r.status_code}): {r.text}")
+            st.error(f"Fehler beim Laden ({r.status_code}): {r.text}")
+    except Exception as e:
+        st.error(f"Fehler beim Laden: {e}")
 
 def main():
     if "logged_in" not in st.session_state:
@@ -142,10 +185,7 @@ def main():
     if st.session_state["logged_in"]:
         authed_view()
     else:
-        if mode == "Login":
-            login_view()
-        else:
-            register_view()
+        (login_view if mode == "Login" else register_view)()
 
 if __name__ == "__main__":
     main()
