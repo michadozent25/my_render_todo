@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtuelle Umgebung (soll nicht ins Repo)
+.venv/
+venv/
+env/
+
+# Lokale Konfigurationsdateien / Secrets
+.env
+.env.*
+!.env.example          # Beispiel-ENV darf drinbleiben
+
+# Pytest / Cache / Logs
+.pytest_cache/
+*.log
+.coverage
+htmlcov/
+.cache/
+
+# Editor-/IDE-bezogene Dateien
+.vscode/
+.idea/
+*.code-workspace
+
+# System-Dateien
+.DS_Store              # macOS
+Thumbs.db              # Windows
+
+# Streamlit (lokale Konfiguration)
+ui/.streamlit/secrets.toml
+**/.streamlit/secrets.toml
+
+# Render / Deployment
+# (render.yaml bleibt im Repo – wichtig)
+# Aber falls Build- oder Deploy-Artefakte existieren:
+*.render-build/
+
+# Alembic (falls du Migrations verwendest)
+alembic.ini            # wenn sensibel – sonst erlauben
+versions/              # wird erzeugt, aber gehört meist ins Repo, falls genutzt
+
+# Node (nur falls doch irgendwo React / npm)
+node_modules/
