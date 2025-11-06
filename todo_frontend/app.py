@@ -1,8 +1,9 @@
 import streamlit as st
+import os
 import requests
 
 
-BASE_URL="http://localhost:8000"
+API_BASE = os.getenv("API_BASE", "http://localhost:8000")
 
 
 def login():
