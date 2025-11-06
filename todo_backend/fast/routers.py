@@ -1,12 +1,13 @@
-# routers.py
+# todo_backend/fast/routers.py
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
+
 from database.db_session import get_db
 from database.crud import UserRepository, TodoRepository
 from security.pwd import hash_password
 from fast.schemas import UserCreate, UserRead, TodoCreate, TodoRead, UserLogin
 from model.models import User, Todo
-
 user_router = APIRouter(prefix="/users", tags=["users"])
 todo_router = APIRouter(prefix="/todos", tags=["todos"])
 
